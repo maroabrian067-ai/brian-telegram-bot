@@ -1,4 +1,4 @@
-"""AI Service powered by Google Gemini: Full ChatGPT-style intelligence + Personal Representative for Maroa Brian Robare."""
+"""AI Service powered by Google Gemini: Full ChatGPT-style intelligence with Auto-Model Detection."""
 
 import json
 import logging
@@ -41,6 +41,7 @@ class AIService:
     def __init__(self):
         self.client = None
         self.provider = None
+        self._active_model = None
         self._init_client()
 
     def _init_client(self):
@@ -48,7 +49,7 @@ class AIService:
             logger.warning("GEMINI_API_KEY is not set.")
             return
 
-        # Prefer google-genai
+        # Prefer google-genai SDK
         try:
             from google import genai
             self.client = genai.Client(api_key=GEMINI_API_KEY)
@@ -58,7 +59,7 @@ class AIService:
         except Exception as e:
             logger.info(f"google-genai not available: {e}")
 
-        # Fallback to google-generativeai
+        # Fallback to google-generativeai SDK
         try:
             import google.generativeai as classic_genai
             classic_genai.configure(api_key=GEMINI_API_KEY)
@@ -68,6 +69,66 @@ class AIService:
             return
         except Exception as e:
             logger.warning(f"google-generativeai not available: {e}")
+
+    def _find_available_model(self) -> str:
+        """Auto-detects the best working model for this API key."""
+        if self._active_model:
+            return self._active_model
+
+        candidates = [
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-exp",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash-002",
+            "gemini-1.5-flash-001",
+            "gemini-1.5-pro-latest",
+            "gemini-1.5-pro",
+        ]
+
+        try:
+            if self.provider == "google-genai":
+                available = []
+                for m in self.client.models.list():
+                    name = getattr(m, "name", "") or str(m)
+                    clean_name = name.replace("models/", "")
+                    available.append(clean_name)
+
+                # Pick the first matching candidate
+                for cand in candidates:
+                    if cand in available:
+                        self._active_model = cand
+                        logger.info(f"Selected Gemini model: {cand}")
+                        return cand
+
+                # If no direct match, find any gemini text model
+                for m in available:
+                    if "gemini" in m and "embed" not in m:
+                        self._active_model = m
+                        return m
+
+            elif self.provider == "google-generativeai":
+                available = []
+                for m in self.client.list_models():
+                    if "generateContent" in getattr(m, "supported_generation_methods", []):
+                        clean_name = m.name.replace("models/", "")
+                        available.append(clean_name)
+
+                for cand in candidates:
+                    if cand in available:
+                        self._active_model = cand
+                        logger.info(f"Selected Gemini model: {cand}")
+                        return cand
+
+                if available:
+                    self._active_model = available[0]
+                    return available[0]
+
+        except Exception as e:
+            logger.warning(f"Could not list models: {e}")
+
+        # Fallback default
+        self._active_model = "gemini-2.0-flash"
+        return self._active_model
 
     async def generate_response(self, user_id: int, user_message: str) -> str:
         """Generates an intelligent AI response."""
@@ -81,6 +142,7 @@ class AIService:
             )
 
         system_instruction = _build_system_instruction()
+        model_name = self._find_available_model()
 
         # Update in-memory history
         history = _chat_histories.setdefault(user_id, [])
@@ -91,7 +153,6 @@ class AIService:
 
         try:
             if self.provider == "google-genai":
-                # Build contents list
                 formatted_contents = []
                 for turn in history:
                     role = "user" if turn["role"] == "user" else "model"
@@ -101,7 +162,7 @@ class AIService:
                     })
 
                 response = self.client.models.generate_content(
-                    model="gemini-1.5-flash",
+                    model=model_name,
                     contents=formatted_contents,
                     config={
                         "system_instruction": system_instruction,
@@ -115,7 +176,7 @@ class AIService:
 
             elif self.provider == "google-generativeai":
                 model = self.client.GenerativeModel(
-                    model_name="gemini-1.5-flash",
+                    model_name=model_name,
                     system_instruction=system_instruction,
                 )
                 chat_history = []
@@ -131,25 +192,24 @@ class AIService:
                 return reply_text
 
         except Exception as e:
-            logger.error(f"Error calling Gemini API: {e}", exc_info=True)
-            # Automatic fallback to single prompt if chat history format had an issue
+            logger.error(f"Error calling model {model_name}: {e}", exc_info=True)
+            # Try single-turn direct prompt fallback
             try:
                 full_prompt = f"{system_instruction}\n\nUser: {user_message}\nAssistant:"
                 if self.provider == "google-genai":
                     resp = self.client.models.generate_content(
-                        model="gemini-1.5-flash",
+                        model=model_name,
                         contents=full_prompt,
                     )
                     return resp.text.strip()
                 elif self.provider == "google-generativeai":
-                    m = self.client.GenerativeModel("gemini-1.5-flash")
+                    m = self.client.GenerativeModel(model_name)
                     resp = m.generate_content(full_prompt)
                     return resp.text.strip()
             except Exception as e2:
                 logger.error(f"Fallback also failed: {e2}")
 
-            # Return the actual error details so we can diagnose immediately if API key has an issue
-            return f"⚠️ API Error: {e}"
+            return f"⚠️ API Error ({model_name}): {e}"
 
 
 # Singleton AI instance
