@@ -1,4 +1,4 @@
-"""AI Service powered by Google Gemini: Full ChatGPT-style intelligence with Auto-Model Detection."""
+"""AI Service powered by Google Gemini (gemini-3.8-flash): Full ChatGPT-style intelligence."""
 
 import json
 import logging
@@ -6,6 +6,8 @@ from typing import Dict, List
 from config import GEMINI_API_KEY, PROFILE, get_owner_name
 
 logger = logging.getLogger(__name__)
+
+MODEL_NAME = "gemini-3.8-flash"
 
 # In-memory conversation history per visitor: {user_id: [{"role": "user"|"model", "text": "..."}]}
 _chat_histories: Dict[int, List[Dict[str, str]]] = {}
@@ -41,7 +43,6 @@ class AIService:
     def __init__(self):
         self.client = None
         self.provider = None
-        self._active_model = None
         self._init_client()
 
     def _init_client(self):
@@ -49,7 +50,6 @@ class AIService:
             logger.warning("GEMINI_API_KEY is not set.")
             return
 
-        # Prefer google-genai SDK
         try:
             from google import genai
             self.client = genai.Client(api_key=GEMINI_API_KEY)
@@ -59,7 +59,6 @@ class AIService:
         except Exception as e:
             logger.info(f"google-genai not available: {e}")
 
-        # Fallback to google-generativeai SDK
         try:
             import google.generativeai as classic_genai
             classic_genai.configure(api_key=GEMINI_API_KEY)
@@ -69,66 +68,6 @@ class AIService:
             return
         except Exception as e:
             logger.warning(f"google-generativeai not available: {e}")
-
-    def _find_available_model(self) -> str:
-        """Auto-detects the best working model for this API key."""
-        if self._active_model:
-            return self._active_model
-
-        candidates = [
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-exp",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-flash-002",
-            "gemini-1.5-flash-001",
-            "gemini-1.5-pro-latest",
-            "gemini-1.5-pro",
-        ]
-
-        try:
-            if self.provider == "google-genai":
-                available = []
-                for m in self.client.models.list():
-                    name = getattr(m, "name", "") or str(m)
-                    clean_name = name.replace("models/", "")
-                    available.append(clean_name)
-
-                # Pick the first matching candidate
-                for cand in candidates:
-                    if cand in available:
-                        self._active_model = cand
-                        logger.info(f"Selected Gemini model: {cand}")
-                        return cand
-
-                # If no direct match, find any gemini text model
-                for m in available:
-                    if "gemini" in m and "embed" not in m:
-                        self._active_model = m
-                        return m
-
-            elif self.provider == "google-generativeai":
-                available = []
-                for m in self.client.list_models():
-                    if "generateContent" in getattr(m, "supported_generation_methods", []):
-                        clean_name = m.name.replace("models/", "")
-                        available.append(clean_name)
-
-                for cand in candidates:
-                    if cand in available:
-                        self._active_model = cand
-                        logger.info(f"Selected Gemini model: {cand}")
-                        return cand
-
-                if available:
-                    self._active_model = available[0]
-                    return available[0]
-
-        except Exception as e:
-            logger.warning(f"Could not list models: {e}")
-
-        # Fallback default
-        self._active_model = "gemini-2.0-flash"
-        return self._active_model
 
     async def generate_response(self, user_id: int, user_message: str) -> str:
         """Generates an intelligent AI response."""
@@ -142,7 +81,6 @@ class AIService:
             )
 
         system_instruction = _build_system_instruction()
-        model_name = self._find_available_model()
 
         # Update in-memory history
         history = _chat_histories.setdefault(user_id, [])
@@ -162,7 +100,7 @@ class AIService:
                     })
 
                 response = self.client.models.generate_content(
-                    model=model_name,
+                    model=MODEL_NAME,
                     contents=formatted_contents,
                     config={
                         "system_instruction": system_instruction,
@@ -176,7 +114,7 @@ class AIService:
 
             elif self.provider == "google-generativeai":
                 model = self.client.GenerativeModel(
-                    model_name=model_name,
+                    model_name=MODEL_NAME,
                     system_instruction=system_instruction,
                 )
                 chat_history = []
@@ -192,24 +130,24 @@ class AIService:
                 return reply_text
 
         except Exception as e:
-            logger.error(f"Error calling model {model_name}: {e}", exc_info=True)
-            # Try single-turn direct prompt fallback
+            logger.error(f"Error calling {MODEL_NAME}: {e}", exc_info=True)
+            # Fallback to single-turn prompt
             try:
                 full_prompt = f"{system_instruction}\n\nUser: {user_message}\nAssistant:"
                 if self.provider == "google-genai":
                     resp = self.client.models.generate_content(
-                        model=model_name,
+                        model=MODEL_NAME,
                         contents=full_prompt,
                     )
                     return resp.text.strip()
                 elif self.provider == "google-generativeai":
-                    m = self.client.GenerativeModel(model_name)
+                    m = self.client.GenerativeModel(MODEL_NAME)
                     resp = m.generate_content(full_prompt)
                     return resp.text.strip()
             except Exception as e2:
                 logger.error(f"Fallback also failed: {e2}")
 
-            return f"⚠️ API Error ({model_name}): {e}"
+            return f"⚠️ API Error ({MODEL_NAME}): {e}"
 
 
 # Singleton AI instance
