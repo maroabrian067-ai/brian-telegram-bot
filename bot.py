@@ -4,14 +4,16 @@ import html
 import logging
 import os
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Update,
     constants,
 )
+from telegram.request import HTTPXRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -276,7 +278,9 @@ def main():
     print(f"📬 Forwarding Chat ID: {OWNER_CHAT_ID if OWNER_CHAT_ID else 'Not configured yet (Send /id to bot) ⚠️'}")
     print("=" * 65)
 
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    # Set generous 30s timeouts to prevent local network drops
+    req = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0)
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).request(req).build()
 
     # Register handlers
     app.add_handler(CommandHandler("start", start_command))
