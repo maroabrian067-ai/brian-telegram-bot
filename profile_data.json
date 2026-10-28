@@ -1,0 +1,74 @@
+{
+  "personal_info": {
+    "name": "Maroa Brian Robare",
+    "title": "Technical Business Development Representative (BDR) & Solutions Designer",
+    "location": "Nairobi, Kenya",
+    "bio": "Motivated, technically grounded Business Information Technology (BBIT) graduate with a unique blend of web architecture knowledge (PHP, MySQL, cloud/hosting environments) and customer-facing discovery experience. Skilled in leveraging modern AI tools for deep account research, lead qualification, and hyper-personalized outreach. Adept at translating complex technical hosting features into clear business value.",
+    "status": "Open for Technical BDR roles, Solution Engineering opportunities, and freelance technical consultations."
+  },
+  "contact": {
+    "email": "maroabrian067@gmail.com",
+    "phone": "+254 791 338 643",
+    "telegram": "Available via this bot or direct message",
+    "preferred_contact_method": "Email, Phone (+254 791 338 643), or leaving a message here"
+  },
+  "social_links": {
+    "portfolio": "https://maroabrian067-ai.github.io/my-portfolio",
+    "linkedin": "https://linkedin.com/in/brian-maroa-0519292ba"
+  },
+  "education": [
+    {
+      "institution": "Mount Kenya University",
+      "degree": "Bachelor of Business Information Technology (BBIT)",
+      "period": "09/2022 – 12/2025",
+      "location": "Thika, Kenya",
+      "coursework": "Business Systems Analysis, Database Administration, Enterprise Systems (ERP), Software Engineering, Information Security, Business Process Modeling (BPM)"
+    },
+    {
+      "institution": "St. Joseph's School, Rapogi",
+      "degree": "Kenya Certificate of Secondary Education (KCSE) - Grade B Plain",
+      "period": "01/2018 – 11/2021"
+    }
+  ],
+  "skills": [
+    "Sales & Pipeline: Inbound Lead Qualification, Discovery Calls, BANT/MEDDIC Frameworks, Pipeline Management",
+    "AI & Automation: AI-Assisted Prospecting (ChatGPT, Claude), Transcript Analysis, Prompt Engineering for Outreach",
+    "Technical & Hosting Acumen: WordPress Ecosystem, Managed Hosting (Uptime, Scalability, Caching, SSL, CDN), DNS & Network Config",
+    "Full-Stack Web Dev: PHP, JavaScript, HTML5/CSS3, MySQL, Supabase, Relational Database Design",
+    "CRM & Tools: HubSpot CRM, Salesforce fundamentals, Jira, Trello, Google Workspace, Slack"
+  ],
+  "experience_and_projects": [
+    {
+      "title": "Project Developer & Stakeholder Coordinator (Volunteer)",
+      "organization": "Migori County Government (05/2025 – 08/2025)",
+      "description": "Conducted discovery interviews with department heads, led solution walkthroughs driving high user adoption, leveraged generative AI to accelerate reporting by 35%, and ensured database uptime and CRM hygiene."
+    },
+    {
+      "title": "Web Developer & Solutions Designer (Portfolio Projects)",
+      "description": "Built interactive web applications using PHP, JS, MySQL, and Supabase. Optimized database queries and resolved hosting, server reliability, and network configuration issues (2024 – 2025).",
+      "link": "https://maroabrian067-ai.github.io/my-portfolio"
+    }
+  ],
+  "faqs": [
+    {
+      "question": "What roles is Brian currently targeting?",
+      "answer": "Brian is targeting Technical BDR, SDR, Solutions Consultant, and Web Solutions Designer roles where he can combine technical hosting/web knowledge with sales discovery and account research."
+    },
+    {
+      "question": "What is Brian's experience with sales frameworks?",
+      "answer": "Brian is skilled in BANT and MEDDIC qualification frameworks, conducting structured discovery calls, pipeline hygiene in HubSpot CRM and Salesforce, and meeting scheduling."
+    },
+    {
+      "question": "Where is Brian located?",
+      "answer": "Brian is based in Nairobi, Kenya (UTC+3) and is comfortable with both local and asynchronous remote communication worldwide."
+    },
+    {
+      "question": "How can I schedule a call or interview with Brian?",
+      "answer": "You can leave your name and contact info directly in this bot using 'Leave a Message', email maroabrian067@gmail.com, or call +254 791 338 643."
+    }
+  ],
+  "bot_behavior": {
+    "greeting_message": "👋 Hello {name}! Welcome to the digital office of *Maroa Brian Robare*.\n\nI am Brian's AI Assistant. I can introduce his background in Technical Sales & Web Architecture, summarize his experience, or take a direct message for him.",
+    "role_description": "You are the personal AI representative for Maroa Brian Robare. Speak professionally, enthusiastically, and warmly. Highlight Brian's unique bridge between deep technical web/database knowledge and sharp BDR/sales qualification acumen."
+  }
+}
