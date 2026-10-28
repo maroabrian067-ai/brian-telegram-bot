@@ -30,8 +30,8 @@ You operate with TWO core capabilities:
 {profile_json_str}
 
 IMPORTANT GUIDELINES:
-- Never say "I can only talk about Brian". If someone asks general questions (e.g., "How does DNS work?", "Write a Python script for web scraping", "What is BANT in sales?"), answer them thoroughly and brilliantly just like ChatGPT!
-- For private personal details about Brian not in the profile (like home address or private calendar), invite them to use the '✉️ Leave a Message' button to contact him directly.
+- Never say "I can only talk about Brian". If someone asks general questions (e.g. "How does DNS work?", "Write a Python script", "What is BANT in sales?"), answer thoroughly and brilliantly just like ChatGPT!
+- For private personal details about Brian not in the profile, invite them to use '✉️ Leave a Message' to contact him directly.
 - Format responses nicely using Markdown (bullet points, bold text, code blocks) so they are easy to read in Telegram.
 - Keep responses engaging, helpful, and concise enough for a chat app.
 """
@@ -48,24 +48,26 @@ class AIService:
             logger.warning("GEMINI_API_KEY is not set.")
             return
 
+        # Prefer google-genai
         try:
             from google import genai
             self.client = genai.Client(api_key=GEMINI_API_KEY)
             self.provider = "google-genai"
-            logger.info("Successfully initialized google-genai client.")
+            logger.info("Initialized google-genai client.")
             return
-        except ImportError:
-            pass
+        except Exception as e:
+            logger.info(f"google-genai not available: {e}")
 
+        # Fallback to google-generativeai
         try:
             import google.generativeai as classic_genai
             classic_genai.configure(api_key=GEMINI_API_KEY)
             self.client = classic_genai
             self.provider = "google-generativeai"
-            logger.info("Successfully initialized google-generativeai client.")
+            logger.info("Initialized google-generativeai client.")
             return
-        except ImportError:
-            logger.warning("Neither 'google-genai' nor 'google-generativeai' could be imported.")
+        except Exception as e:
+            logger.warning(f"google-generativeai not available: {e}")
 
     async def generate_response(self, user_id: int, user_message: str) -> str:
         """Generates an intelligent AI response."""
@@ -74,7 +76,7 @@ class AIService:
         if not GEMINI_API_KEY or not self.client:
             return (
                 f"👋 Hello! I am {owner_name}'s AI assistant.\n\n"
-                "*(AI chat mode is waiting for GEMINI_API_KEY)*\n\n"
+                "*(AI chat mode is waiting for GEMINI_API_KEY in .env)*\n\n"
                 "Please use the buttons below to explore Brian's background or leave a direct message!"
             )
 
@@ -89,25 +91,23 @@ class AIService:
 
         try:
             if self.provider == "google-genai":
-                from google.genai import types
-
-                contents = []
+                # Build contents list
+                formatted_contents = []
                 for turn in history:
-                    contents.append(
-                        types.Content(
-                            role="user" if turn["role"] == "user" else "model",
-                            parts=[types.Part.from_text(text=turn["text"])],
-                        )
-                    )
+                    role = "user" if turn["role"] == "user" else "model"
+                    formatted_contents.append({
+                        "role": role,
+                        "parts": [{"text": turn["text"]}]
+                    })
 
                 response = self.client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        temperature=0.8,
-                        max_output_tokens=1500,
-                    ),
+                    model="gemini-1.5-flash",
+                    contents=formatted_contents,
+                    config={
+                        "system_instruction": system_instruction,
+                        "temperature": 0.8,
+                        "max_output_tokens": 1200,
+                    }
                 )
                 reply_text = response.text.strip()
                 history.append({"role": "model", "text": reply_text})
@@ -118,22 +118,38 @@ class AIService:
                     model_name="gemini-1.5-flash",
                     system_instruction=system_instruction,
                 )
-                chat = model.start_chat(
-                    history=[
-                        {"role": turn["role"], "parts": [turn["text"]]}
-                        for turn in history[:-1]
-                    ]
-                )
+                chat_history = []
+                for turn in history[:-1]:
+                    chat_history.append({
+                        "role": turn["role"],
+                        "parts": [turn["text"]]
+                    })
+                chat = model.start_chat(history=chat_history)
                 response = chat.send_message(user_message)
                 reply_text = response.text.strip()
                 history.append({"role": "model", "text": reply_text})
                 return reply_text
 
         except Exception as e:
-            logger.error(f"Error calling Gemini: {e}", exc_info=True)
-            return (
-                f"I ran into a temporary issue, but I am ready to help! What would you like to explore or discuss?"
-            )
+            logger.error(f"Error calling Gemini API: {e}", exc_info=True)
+            # Automatic fallback to single prompt if chat history format had an issue
+            try:
+                full_prompt = f"{system_instruction}\n\nUser: {user_message}\nAssistant:"
+                if self.provider == "google-genai":
+                    resp = self.client.models.generate_content(
+                        model="gemini-1.5-flash",
+                        contents=full_prompt,
+                    )
+                    return resp.text.strip()
+                elif self.provider == "google-generativeai":
+                    m = self.client.GenerativeModel("gemini-1.5-flash")
+                    resp = m.generate_content(full_prompt)
+                    return resp.text.strip()
+            except Exception as e2:
+                logger.error(f"Fallback also failed: {e2}")
+
+            # Return the actual error details so we can diagnose immediately if API key has an issue
+            return f"⚠️ API Error: {e}"
 
 
 # Singleton AI instance
