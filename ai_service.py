@@ -1,5 +1,6 @@
-"""AI Service powered by Google Gemini (gemini-3.8-flash): Full ChatGPT-style intelligence."""
+"""AI Service powered by Google Gemini: Full ChatGPT-style intelligence with Automatic 503 Fallback."""
 
+import asyncio
 import json
 import logging
 from typing import Dict, List
@@ -7,9 +8,14 @@ from config import GEMINI_API_KEY, PROFILE, get_owner_name
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "gemini-3.8-flash"
+# List of models in order of preference. If the primary model is busy (503), it tries the next!
+FALLBACK_MODELS = [
+    "gemini-3.8-flash",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-exp",
+    "gemini-1.5-flash",
+]
 
-# In-memory conversation history per visitor: {user_id: [{"role": "user"|"model", "text": "..."}]}
 _chat_histories: Dict[int, List[Dict[str, str]]] = {}
 MAX_HISTORY_PER_USER = 10
 
@@ -69,8 +75,47 @@ class AIService:
         except Exception as e:
             logger.warning(f"google-generativeai not available: {e}")
 
+    def _call_model(self, model_name: str, history: List[Dict[str, str]], system_instruction: str) -> str:
+        """Attempts to call a single Gemini model."""
+        if self.provider == "google-genai":
+            formatted_contents = []
+            for turn in history:
+                role = "user" if turn["role"] == "user" else "model"
+                formatted_contents.append({
+                    "role": role,
+                    "parts": [{"text": turn["text"]}]
+                })
+
+            response = self.client.models.generate_content(
+                model=model_name,
+                contents=formatted_contents,
+                config={
+                    "system_instruction": system_instruction,
+                    "temperature": 0.8,
+                    "max_output_tokens": 1200,
+                }
+            )
+            return response.text.strip()
+
+        elif self.provider == "google-generativeai":
+            model = self.client.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system_instruction,
+            )
+            chat_history = []
+            for turn in history[:-1]:
+                chat_history.append({
+                    "role": turn["role"],
+                    "parts": [turn["text"]]
+                })
+            chat = model.start_chat(history=chat_history)
+            response = chat.send_message(history[-1]["text"])
+            return response.text.strip()
+
+        raise RuntimeError("No Gemini SDK provider initialized.")
+
     async def generate_response(self, user_id: int, user_message: str) -> str:
-        """Generates an intelligent AI response."""
+        """Generates an intelligent AI response with automatic failover."""
         owner_name = get_owner_name()
 
         if not GEMINI_API_KEY or not self.client:
@@ -89,65 +134,28 @@ class AIService:
             history = history[-MAX_HISTORY_PER_USER:]
             _chat_histories[user_id] = history
 
-        try:
-            if self.provider == "google-genai":
-                formatted_contents = []
-                for turn in history:
-                    role = "user" if turn["role"] == "user" else "model"
-                    formatted_contents.append({
-                        "role": role,
-                        "parts": [{"text": turn["text"]}]
-                    })
+        last_error = None
 
-                response = self.client.models.generate_content(
-                    model=MODEL_NAME,
-                    contents=formatted_contents,
-                    config={
-                        "system_instruction": system_instruction,
-                        "temperature": 0.8,
-                        "max_output_tokens": 1200,
-                    }
-                )
-                reply_text = response.text.strip()
-                history.append({"role": "model", "text": reply_text})
-                return reply_text
-
-            elif self.provider == "google-generativeai":
-                model = self.client.GenerativeModel(
-                    model_name=MODEL_NAME,
-                    system_instruction=system_instruction,
-                )
-                chat_history = []
-                for turn in history[:-1]:
-                    chat_history.append({
-                        "role": turn["role"],
-                        "parts": [turn["text"]]
-                    })
-                chat = model.start_chat(history=chat_history)
-                response = chat.send_message(user_message)
-                reply_text = response.text.strip()
-                history.append({"role": "model", "text": reply_text})
-                return reply_text
-
-        except Exception as e:
-            logger.error(f"Error calling {MODEL_NAME}: {e}", exc_info=True)
-            # Fallback to single-turn prompt
+        # Try models in order of priority (handles temporary 503 spikes automatically)
+        for model in FALLBACK_MODELS:
             try:
-                full_prompt = f"{system_instruction}\n\nUser: {user_message}\nAssistant:"
-                if self.provider == "google-genai":
-                    resp = self.client.models.generate_content(
-                        model=MODEL_NAME,
-                        contents=full_prompt,
-                    )
-                    return resp.text.strip()
-                elif self.provider == "google-generativeai":
-                    m = self.client.GenerativeModel(MODEL_NAME)
-                    resp = m.generate_content(full_prompt)
-                    return resp.text.strip()
-            except Exception as e2:
-                logger.error(f"Fallback also failed: {e2}")
+                reply_text = self._call_model(model, history, system_instruction)
+                if reply_text:
+                    history.append({"role": "model", "text": reply_text})
+                    return reply_text
+            except Exception as e:
+                err_msg = str(e)
+                logger.warning(f"Model {model} failed ({err_msg}). Trying fallback...")
+                last_error = err_msg
 
-            return f"⚠️ API Error ({MODEL_NAME}): {e}"
+                # If it's a 503 high demand spike, give a tiny 0.5s pause before trying fallback
+                if "503" in err_msg:
+                    await asyncio.sleep(0.5)
+                continue
+
+        # If all models failed
+        logger.error(f"All fallback models failed. Last error: {last_error}")
+        return "I'm experiencing a brief moment of high traffic from Google servers! Please send your message again in just a moment, or use the menu buttons below."
 
 
 # Singleton AI instance
