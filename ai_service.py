@@ -1,4 +1,4 @@
-"""AI Service powered by Google Gemini: Full ChatGPT-style intelligence with Automatic 503 Fallback."""
+"""AI Service powered by Google Gemini (3.8 generation) with Smart Retry & Pro Fallback."""
 
 import asyncio
 import json
@@ -8,13 +8,8 @@ from config import GEMINI_API_KEY, PROFILE, get_owner_name
 
 logger = logging.getLogger(__name__)
 
-# List of models in order of preference. If the primary model is busy (503), it tries the next!
-FALLBACK_MODELS = [
-    "gemini-3.8-flash",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-exp",
-    "gemini-1.5-flash",
-]
+# Available models for your API key
+MODELS = ["gemini-3.8-flash", "gemini-3.8-pro"]
 
 _chat_histories: Dict[int, List[Dict[str, str]]] = {}
 MAX_HISTORY_PER_USER = 10
@@ -76,7 +71,7 @@ class AIService:
             logger.warning(f"google-generativeai not available: {e}")
 
     def _call_model(self, model_name: str, history: List[Dict[str, str]], system_instruction: str) -> str:
-        """Attempts to call a single Gemini model."""
+        """Executes a single API call to Gemini."""
         if self.provider == "google-genai":
             formatted_contents = []
             for turn in history:
@@ -115,7 +110,7 @@ class AIService:
         raise RuntimeError("No Gemini SDK provider initialized.")
 
     async def generate_response(self, user_id: int, user_message: str) -> str:
-        """Generates an intelligent AI response with automatic failover."""
+        """Generates an AI response with smart retries and Pro fallback."""
         owner_name = get_owner_name()
 
         if not GEMINI_API_KEY or not self.client:
@@ -134,28 +129,30 @@ class AIService:
             history = history[-MAX_HISTORY_PER_USER:]
             _chat_histories[user_id] = history
 
-        last_error = None
+        # Try models in order: gemini-3.8-flash -> gemini-3.8-pro
+        for model in MODELS:
+            # Retry up to 3 times if 503 high demand spike occurs
+            for attempt in range(3):
+                try:
+                    reply_text = self._call_model(model, history, system_instruction)
+                    if reply_text:
+                        history.append({"role": "model", "text": reply_text})
+                        return reply_text
+                except Exception as e:
+                    err = str(e)
+                    logger.warning(f"Model {model} attempt {attempt+1} error: {err}")
 
-        # Try models in order of priority (handles temporary 503 spikes automatically)
-        for model in FALLBACK_MODELS:
-            try:
-                reply_text = self._call_model(model, history, system_instruction)
-                if reply_text:
-                    history.append({"role": "model", "text": reply_text})
-                    return reply_text
-            except Exception as e:
-                err_msg = str(e)
-                logger.warning(f"Model {model} failed ({err_msg}). Trying fallback...")
-                last_error = err_msg
+                    # If temporary 503 high demand spike, wait and retry
+                    if "503" in err or "UNAVAILABLE" in err:
+                        wait_seconds = 1.5 * (attempt + 1)
+                        logger.info(f"Retrying {model} in {wait_seconds}s...")
+                        await asyncio.sleep(wait_seconds)
+                        continue
 
-                # If it's a 503 high demand spike, give a tiny 0.5s pause before trying fallback
-                if "503" in err_msg:
-                    await asyncio.sleep(0.5)
-                continue
+                    # If model not found (404), break to next model immediately
+                    break
 
-        # If all models failed
-        logger.error(f"All fallback models failed. Last error: {last_error}")
-        return "I'm experiencing a brief moment of high traffic from Google servers! Please send your message again in just a moment, or use the menu buttons below."
+        return "Google's Gemini servers are experiencing a brief traffic spike right now. Please send your message again in a few seconds!"
 
 
 # Singleton AI instance
